@@ -1,0 +1,20 @@
+# Data and videos
+data/
+*.mkv
+*.mp4
+
+# Trained models
+models/
+
+# Plots
+plots/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE files
+.vscode/
+.idea/

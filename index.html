@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KickSight — Football Event Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── RESET & TOKENS ─────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --pitch:    #0a1a0f;
+  --pitch2:   #0d2214;
+  --line:     #1a3d20;
+  --green:    #00e574;
+  --green2:   #00b85c;
+  --amber:    #f5c842;
+  --red:      #ff4545;
+  --card-bg:  #0f2318;
+  --card-br:  #1e4028;
+  --text:     #e8f5ec;
+  --muted:    #5a8068;
+  --mono:     'IBM Plex Mono', monospace;
+  --display:  'Barlow Condensed', sans-serif;
+  --body:     'Barlow', sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--pitch);
+  color: var(--text);
+  font-family: var(--body);
+  font-weight: 300;
+  overflow-x: hidden;
+  cursor: default;
+}
+
+/* ── PITCH TEXTURE BACKGROUND ───────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 60px,
+      rgba(0,229,116,0.018) 60px,
+      rgba(0,229,116,0.018) 61px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 60px,
+      rgba(0,229,116,0.018) 60px,
+      rgba(0,229,116,0.018) 61px
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── NAV ────────────────────────────────────────────────────────────────── */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3rem;
+  height: 64px;
+  background: rgba(10,26,15,0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.nav-logo {
+  font-family: var(--display);
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--green);
+  text-transform: uppercase;
+}
+.nav-logo span { color: var(--text); }
+
+.nav-links { display: flex; gap: 2rem; }
+.nav-links a {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--green); }
+
+.nav-badge {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  padding: 4px 12px;
+  border: 1px solid var(--green);
+  color: var(--green);
+  border-radius: 2px;
+  letter-spacing: 0.08em;
+}
+
+/* ── HERO ───────────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding: 0 3rem;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* Pitch circle decoration */
+.hero-circle {
+  position: absolute;
+  right: -8vw;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 54vw;
+  height: 54vw;
+  border-radius: 50%;
+  border: 1px solid rgba(0,229,116,0.12);
+  pointer-events: none;
+  animation: rotateSlow 60s linear infinite;
+}
+.hero-circle::before {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid rgba(0,229,116,0.08);
+}
+.hero-circle::after {
+  content: '';
+  position: absolute;
+  inset: 30%;
+  border-radius: 50%;
+  border: 1px solid rgba(0,229,116,0.15);
+  background: radial-gradient(circle, rgba(0,229,116,0.04) 0%, transparent 70%);
+}
+
+@keyframes rotateSlow { to { transform: translateY(-50%) rotate(360deg); } }
+
+.hero-content { position: relative; z-index: 2; max-width: 700px; }
+
+.hero-label {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--green);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.hero-label::before {
+  content: '';
+  width: 32px; height: 1px;
+  background: var(--green);
+}
+
+.hero-title {
+  font-family: var(--display);
+  font-size: clamp(3.5rem, 7vw, 6.5rem);
+  font-weight: 900;
+  line-height: 0.92;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  margin-bottom: 1.5rem;
+}
+.hero-title .accent { color: var(--green); display: block; }
+
+.hero-desc {
+  font-size: 1.05rem;
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 480px;
+  margin-bottom: 2.5rem;
+  font-weight: 400;
+}
+
+.hero-actions { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+
+.btn-primary {
+  font-family: var(--display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 14px 32px;
+  background: var(--green);
+  color: var(--pitch);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-primary:hover { background: var(--green2); transform: translateY(-1px); }
+
+.btn-outline {
+  font-family: var(--display);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 13px 32px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--card-br);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+.btn-outline:hover { border-color: var(--green); color: var(--green); }
+
+.hero-stats {
+  display: flex;
+  gap: 3rem;
+  margin-top: 4rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+}
+.hero-stat-val {
+  font-family: var(--display);
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: var(--green);
+  line-height: 1;
+}
+.hero-stat-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-top: 4px;
+}
+
+/* ── SECTION SHELL ──────────────────────────────────────────────────────── */
+section {
+  position: relative;
+  z-index: 1;
+  padding: 6rem 3rem;
+}
+
+.section-label {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.section-label::before {
+  content: '';
+  width: 20px; height: 1px;
+  background: var(--green);
+}
+
+.section-title {
+  font-family: var(--display);
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  margin-bottom: 1rem;
+}
+
+.section-sub {
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 560px;
+  margin-bottom: 3rem;
+}
+
+/* ── PIPELINE SECTION ───────────────────────────────────────────────────── */
+.pipeline-section { background: var(--pitch2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+
+.pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-top: 3rem;
+}
+
+.pipeline-step {
+  background: var(--card-bg);
+  padding: 2rem 1.75rem;
+  position: relative;
+  transition: background 0.3s;
+  cursor: default;
+}
+.pipeline-step:hover { background: #112a1a; }
+
+.step-num {
+  font-family: var(--display);
+  font-size: 4rem;
+  font-weight: 900;
+  color: rgba(0,229,116,0.07);
+  line-height: 1;
+  position: absolute;
+  top: 1rem; right: 1.25rem;
+  pointer-events: none;
+  transition: color 0.3s;
+}
+.pipeline-step:hover .step-num { color: rgba(0,229,116,0.13); }
+
+.step-icon {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.step-title {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.step-script {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--green);
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+.step-desc {
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ── UPLOAD / DEMO SECTION ──────────────────────────────────────────────── */
+.demo-section { max-width: 1200px; margin: 0 auto; }
+
+.upload-area {
+  border: 1px dashed var(--card-br);
+  border-radius: 4px;
+  padding: 4rem 2rem;
+  text-align: center;
+  background: var(--card-bg);
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 2rem;
+}
+.upload-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0,229,116,0.04) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.upload-area:hover { border-color: var(--green); }
+.upload-area:hover::before { opacity: 1; }
+.upload-area.drag-over { border-color: var(--green); background: rgba(0,229,116,0.05); }
+
+.upload-icon {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+  display: block;
+}
+.upload-title {
+  font-family: var(--display);
+  font-size: 1.4rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+.upload-sub {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+#fileInput { display: none; }
+
+/* ── SETTINGS ROW ───────────────────────────────────────────────────────── */
+.settings-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.setting-group { display: flex; flex-direction: column; gap: 6px; }
+
+.setting-label {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.setting-select, .setting-input {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-br);
+  color: var(--text);
+  padding: 9px 14px;
+  border-radius: 2px;
+  outline: none;
+  transition: border-color 0.2s;
+  min-width: 120px;
+}
+.setting-select:focus, .setting-input:focus { border-color: var(--green); }
+.setting-select option { background: var(--card-bg); }
+
+/* ── ANALYSE BUTTON ─────────────────────────────────────────────────────── */
+.analyse-btn {
+  font-family: var(--display);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 12px 36px;
+  background: var(--green);
+  color: var(--pitch);
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: auto;
+}
+.analyse-btn:hover:not(:disabled) { background: var(--green2); transform: translateY(-1px); }
+.analyse-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ── PROGRESS ───────────────────────────────────────────────────────────── */
+.progress-panel {
+  display: none;
+  background: var(--card-bg);
+  border: 1px solid var(--card-br);
+  border-radius: 4px;
+  padding: 1.75rem;
+  margin-bottom: 2rem;
+}
+.progress-panel.visible { display: block; }
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.progress-label {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--green);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.progress-pct {
+  font-family: var(--display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--green);
+}
+
+.progress-bar-track {
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  width: 0%;
+  box-shadow: 0 0 12px rgba(0,229,116,0.5);
+}
+
+.progress-log {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.8;
+  max-height: 100px;
+  overflow-y: auto;
+}
+.progress-log .log-line { display: block; }
+.progress-log .log-line.highlight { color: var(--green); }
+
+/* ── RESULTS ────────────────────────────────────────────────────────────── */
+.results-panel { display: none; }
+.results-panel.visible { display: block; }
+
+.results-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  margin-bottom: 2rem;
+}
+
+.summary-card {
+  background: var(--card-bg);
+  padding: 1.5rem;
+  text-align: center;
+}
+.summary-val {
+  font-family: var(--display);
+  font-size: 2.8rem;
+  font-weight: 900;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+.summary-key {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.c-green { color: var(--green); }
+.c-amber { color: var(--amber); }
+.c-red   { color: var(--red); }
+.c-blue  { color: #4db8ff; }
+
+/* ── TIMELINE ───────────────────────────────────────────────────────────── */
+.timeline-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-br);
+  border-radius: 4px;
+  padding: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.panel-title {
+  font-family: var(--display);
+  font-size: 1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 1.5rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.panel-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.timeline-track {
+  position: relative;
+  height: 64px;
+  background: var(--pitch);
+  border-radius: 2px;
+  overflow: visible;
+  margin-bottom: 0.75rem;
+}
+
+.timeline-axis {
+  position: absolute;
+  top: 50%;
+  left: 0; right: 0;
+  height: 2px;
+  background: var(--line);
+  transform: translateY(-50%);
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+}
+.marker-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--pitch);
+  transition: transform 0.2s;
+  position: relative;
+}
+.timeline-marker:hover .marker-dot { transform: scale(1.5); }
+.marker-label {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  white-space: nowrap;
+  color: var(--text);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  background: var(--card-bg);
+  border: 1px solid var(--card-br);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+.timeline-marker:hover .marker-label { opacity: 1; }
+
+.timeline-minutes {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.legend-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.legend-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+/* ── EVENT TABLE ────────────────────────────────────────────────────────── */
+.events-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-br);
+  border-radius: 4px;
+  padding: 1.75rem;
+  margin-bottom: 2rem;
+}
+
+.events-table { width: 100%; border-collapse: collapse; }
+.events-table th {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-align: left;
+  padding: 0 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+.events-table td {
+  padding: 0.75rem;
+  font-size: 0.88rem;
+  border-bottom: 1px solid rgba(30,64,40,0.4);
+}
+.events-table tr:last-child td { border-bottom: none; }
+.events-table tr:hover td { background: rgba(0,229,116,0.03); }
+
+.event-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+.conf-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.conf-bar-track {
+  flex: 1;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 80px;
+}
+.conf-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--green);
+}
+.conf-val {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  min-width: 36px;
+}
+
+/* ── EXPORT ROW ─────────────────────────────────────────────────────────── */
+.export-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-bottom: 2rem;
+}
+
+.btn-export {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 20px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--card-br);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-export:hover { border-color: var(--green); color: var(--green); }
+
+/* ── FEATURES SECTION ───────────────────────────────────────────────────── */
+.features-section {
+  background: var(--pitch2);
+  border-top: 1px solid var(--line);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+}
+
+.feature-card {
+  background: var(--card-bg);
+  padding: 1.75rem;
+  transition: background 0.3s;
+}
+.feature-card:hover { background: #112a1a; }
+
+.feature-num {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--green);
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.1em;
+}
+.feature-name {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--text);
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.02em;
+}
+.feature-desc {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.feature-tag {
+  display: inline-block;
+  margin-top: 0.75rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  padding: 2px 8px;
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+}
+
+/* ── TEAM SECTION ───────────────────────────────────────────────────────── */
+.team-section { border-top: 1px solid var(--line); }
+.team-grid { display: flex; gap: 2rem; flex-wrap: wrap; }
+
+.team-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-br);
+  border-radius: 4px;
+  padding: 2rem;
+  flex: 1;
+  min-width: 240px;
+}
+.team-number {
+  font-family: var(--display);
+  font-size: 3rem;
+  font-weight: 900;
+  color: rgba(0,229,116,0.15);
+  line-height: 1;
+  margin-bottom: 0.5rem;
+}
+.team-name {
+  font-family: var(--display);
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+.team-id {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+/* ── FOOTER ─────────────────────────────────────────────────────────────── */
+footer {
+  position: relative;
+  z-index: 1;
+  background: var(--pitch2);
+  border-top: 1px solid var(--line);
+  padding: 2rem 3rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.footer-logo {
+  font-family: var(--display);
+  font-size: 1.2rem;
+  font-weight: 900;
+  color: var(--green);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.footer-logo span { color: var(--muted); }
+.footer-info {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+
+/* ── ANIMATIONS ─────────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0,229,116,0.3); }
+  50%       { box-shadow: 0 0 0 8px rgba(0,229,116,0); }
+}
+
+.hero-content > * {
+  animation: fadeUp 0.7s ease both;
+}
+.hero-content > *:nth-child(1) { animation-delay: 0.1s; }
+.hero-content > *:nth-child(2) { animation-delay: 0.2s; }
+.hero-content > *:nth-child(3) { animation-delay: 0.3s; }
+.hero-content > *:nth-child(4) { animation-delay: 0.4s; }
+.hero-content > *:nth-child(5) { animation-delay: 0.5s; }
+
+/* ── SCROLLBAR ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--pitch); }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  nav { padding: 0 1.5rem; }
+  .nav-links { display: none; }
+  section { padding: 4rem 1.5rem; }
+  .hero { padding: 6rem 1.5rem 3rem; }
+  .hero-circle { display: none; }
+  .hero-stats { gap: 2rem; }
+  footer { padding: 2rem 1.5rem; flex-direction: column; align-items: flex-start; }
+  .footer-info { text-align: left; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">Kick<span>Sight</span></div>
+  <div class="nav-links">
+    <a href="#pipeline">Pipeline</a>
+    <a href="#analyse">Analyse</a>
+    <a href="#features">Features</a>
+    <a href="#team">Team</a>
+  </div>
+  <div class="nav-badge">IDS Project</div>
+</nav>
+
+<!-- HERO -->
+<section class="hero" id="home">
+  <div class="hero-circle"></div>
+  <div class="hero-content">
+    <div class="hero-label">Introduction to Data Science</div>
+    <h1 class="hero-title">
+      Football<br>
+      Event<br>
+      <span class="accent">Detection</span>
+    </h1>
+    <p class="hero-desc">
+      Automated detection and counting of fouls and yellow cards in football
+      match footage using YOLOv8 object detection and Random Forest classification.
+      Trained on 608 real SoccerNet events across 2 classes.
+    </p>
+    <div class="hero-actions">
+      <a href="#analyse" class="btn-primary">Analyse a Video</a>
+      <a href="#pipeline" class="btn-outline">View Pipeline</a>
+    </div>
+    <div class="hero-stats">
+      <div>
+        <div class="hero-stat-val">14</div>
+        <div class="hero-stat-label">Engineered Features</div>
+      </div>
+      <div>
+        <div class="hero-stat-val">2</div>
+        <div class="hero-stat-label">Event Classes</div>
+      </div>
+      <div>
+        <div class="hero-stat-val">608</div>
+        <div class="hero-stat-label">Training Events</div>
+      </div>
+      <div>
+        <div class="hero-stat-val">SoccerNet</div>
+        <div class="hero-stat-label">Dataset</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PIPELINE -->
+<section class="pipeline-section" id="pipeline">
+  <div class="section-label">How it works</div>
+  <h2 class="section-title">Data Science Pipeline</h2>
+  <p class="section-sub">Each stage of the standard DS pipeline maps directly to a Python script in the project.</p>
+  <div class="pipeline-grid">
+    <div class="pipeline-step">
+      <div class="step-num">01</div>
+      <div class="step-icon">🎯</div>
+      <div class="step-title">Problem Definition</div>
+      <div class="step-script">01_download_data.py</div>
+      <div class="step-desc">Define target event classes: Foul and Yellow card. Penalty and Red card excluded due to insufficient training samples.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">02</div>
+      <div class="step-icon">📥</div>
+      <div class="step-title">Data Collection</div>
+      <div class="step-script">build_index_only.py</div>
+      <div class="step-desc">Download SoccerNet annotations and build event_index.csv mapping events to video timestamps.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">03</div>
+      <div class="step-icon">🎬</div>
+      <div class="step-title">Preprocessing</div>
+      <div class="step-script">02_extract_features.py</div>
+      <div class="step-desc">Extract ±5s frame windows per event. Run YOLOv8 to detect players (class 0) and ball (class 32).</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">04</div>
+      <div class="step-icon">⚙️</div>
+      <div class="step-title">Feature Engineering</div>
+      <div class="step-script">utils.py → compute_features()</div>
+      <div class="step-desc">Compute 14 spatial and temporal features: wall formation index, ball-to-spot distance, optical flow, and more.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">05</div>
+      <div class="step-icon">📊</div>
+      <div class="step-title">EDA & Modelling</div>
+      <div class="step-script">03_train_model.py</div>
+      <div class="step-desc">Explore class distribution (509 fouls, 90 yellow cards). Apply SMOTE. Train Random Forest (200 trees) with 5-fold cross-validation.</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-num">06</div>
+      <div class="step-icon">🚀</div>
+      <div class="step-title">Deployment</div>
+      <div class="step-script">04_predict.py</div>
+      <div class="step-desc">Sliding window scan with temporal smoothing and cooldown deduplication. Outputs timestamped event log.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ANALYSE -->
+<section id="analyse">
+  <div class="demo-section">
+    <div class="section-label">Live Demo</div>
+    <h2 class="section-title">Analyse a Match</h2>
+    <p class="section-sub">Upload a results CSV exported from 04_predict.py to visualise detected events.</p>
+
+    <!-- Upload -->
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+      <span class="upload-icon">⚽</span>
+      <div class="upload-title">Drop your results.csv here</div>
+      <div class="upload-sub">or click to browse · CSV exported from 04_predict.py</div>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+
+    <!-- Settings -->
+    <div class="settings-row">
+      <div class="setting-group">
+        <label class="setting-label">Match Half</label>
+        <select class="setting-select" id="halfSelect">
+          <option value="1">First Half</option>
+          <option value="2">Second Half</option>
+        </select>
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Min Confidence</label>
+        <input type="number" class="setting-input" id="confInput" value="0.55" min="0" max="1" step="0.05" style="width:100px">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Filter Class</label>
+        <select class="setting-select" id="classFilter">
+          <option value="all">All Events</option>
+          <option value="Foul">Foul</option>
+          <option value="Yellow card">Yellow Card</option>
+        </select>
+      </div>
+      <button class="analyse-btn" id="analyseBtn" disabled onclick="runAnalysis()">Analyse</button>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-panel" id="progressPanel">
+      <div class="progress-header">
+        <span class="progress-label">Processing match data</span>
+        <span class="progress-pct" id="progressPct">0%</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-log" id="progressLog"></div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-panel" id="resultsPanel">
+
+      <!-- Summary cards -->
+      <div class="results-summary" id="summaryCards"></div>
+
+      <!-- Export -->
+      <div class="export-row">
+        <button class="btn-export" onclick="exportCSV()">↓ Export CSV</button>
+        <button class="btn-export" onclick="exportJSON()">↓ Export JSON</button>
+      </div>
+
+      <!-- Timeline -->
+      <div class="timeline-panel">
+        <div class="panel-title">Event Timeline</div>
+        <div class="timeline-track" id="timelineTrack">
+          <div class="timeline-axis"></div>
+        </div>
+        <div class="timeline-minutes" id="timelineMinutes"></div>
+        <div class="legend-row" id="legendRow"></div>
+      </div>
+
+      <!-- Event table -->
+      <div class="events-panel">
+        <div class="panel-title">Detected Events</div>
+        <table class="events-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Match Time</th>
+              <th>Event</th>
+              <th>Confidence</th>
+              <th>Half</th>
+            </tr>
+          </thead>
+          <tbody id="eventsTableBody"></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features-section" id="features">
+  <div class="section-label">Model Inputs</div>
+  <h2 class="section-title">14 Engineered Features</h2>
+  <p class="section-sub">Each feature is computed from YOLOv8 bounding boxes per event window and captures a specific visual pattern.</p>
+  <div class="features-grid" id="featuresGrid"></div>
+</section>
+
+<!-- TEAM -->
+<section class="team-section" id="team">
+  <div class="section-label">Group Members</div>
+  <h2 class="section-title">The Team</h2>
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-number">28</div>
+      <div class="team-name">Ahmed Umar Mirza</div>
+      <div class="team-id">01-134232-028</div>
+    </div>
+    <div class="team-card">
+      <div class="team-number">47</div>
+      <div class="team-name">Bisma Rauf</div>
+      <div class="team-id">01-134232-047</div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-logo">Kick<span>Sight</span></div>
+  <div class="footer-info">
+    Introduction to Data Science · SoccerNet · YOLOv8 + Random Forest<br>
+    Dataset: SoccerNet 720p MKV · Python + scikit-learn
+  </div>
+</footer>
+
+<script>
+// ── COLOR MAP ────────────────────────────────────────────────────────────────
+const EVENT_COLORS = {
+  'Penalty':     { bg: 'rgba(255,69,69,0.15)',   border: '#ff4545', dot: '#ff4545',  text: '#ff4545'  },
+  'Foul':        { bg: 'rgba(77,184,255,0.12)',  border: '#4db8ff', dot: '#4db8ff',  text: '#4db8ff'  },
+  'Yellow card': { bg: 'rgba(245,200,66,0.15)',  border: '#f5c842', dot: '#f5c842',  text: '#f5c842'  },
+  'Red card':    { bg: 'rgba(255,100,100,0.18)', border: '#ff6464', dot: '#ff6464',  text: '#ff6464'  },
+  'Free kick':   { bg: 'rgba(0,229,116,0.12)',   border: '#00e574', dot: '#00e574',  text: '#00e574'  },
+};
+
+const DEFAULT_COLOR = { bg: 'rgba(90,128,104,0.15)', border: '#5a8068', dot: '#5a8068', text: '#5a8068' };
+
+function getColor(eventName) {
+  return EVENT_COLORS[eventName] || DEFAULT_COLOR;
+}
+
+// ── FEATURES DATA ────────────────────────────────────────────────────────────
+const FEATURES = [
+  { name: 'clustering_mid',      desc: 'Mean nearest-neighbour distance between players in middle frame. Low = bunched together.',    tag: 'Yellow card', tagColor: '#f5c842' },
+  { name: 'ball_dist_spot_mid',  desc: 'Distance from ball centre to penalty spot (normalised 0–1). Provides spatial context.',       tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'wall_index_mid',      desc: 'Count of collinear players within 15% of ball — indicates a set piece formation.',            tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'players_in_box_mid',  desc: 'Number of players detected inside the penalty area in the middle frame.',                     tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'ball_in_box_mid',     desc: 'Binary flag: is the ball inside the penalty area boundary?',                                  tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'optical_flow',        desc: 'Mean dense optical flow magnitude across all frame pairs. High = active play / foul moment.', tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'temporal_delta',      desc: 'Mean frame-over-frame change in player count. High = players repositioning after a foul.',    tag: 'Both',        tagColor: '#00e574' },
+  { name: 'ball_detected_ratio', desc: 'Fraction of frames where YOLOv8 successfully detected the ball.',                            tag: 'Both',        tagColor: '#00e574' },
+  { name: 'avg_player_count',    desc: 'Mean number of players detected per frame across the event window.',                          tag: 'Both',        tagColor: '#00e574' },
+  { name: 'mean_wall_index',     desc: 'Mean wall formation index across all frames — sustained clustering near ball.',               tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'mean_ball_dist_spot', desc: 'Mean ball-to-penalty-spot distance across all frames in the window.',                        tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'mean_clustering',     desc: 'Mean player clustering score across the entire event window.',                               tag: 'Yellow card', tagColor: '#f5c842' },
+  { name: 'mean_players_in_box', desc: 'Mean count of players in the penalty area across the event window.',                         tag: 'Foul',        tagColor: '#4db8ff' },
+  { name: 'mean_ball_in_box',    desc: 'Mean ball-in-box flag across all frames — how often was ball in box throughout window.',      tag: 'Foul',        tagColor: '#4db8ff' },
+];
+
+// ── RENDER FEATURES ──────────────────────────────────────────────────────────
+const fg = document.getElementById('featuresGrid');
+FEATURES.forEach((f, i) => {
+  fg.innerHTML += `
+    <div class="feature-card">
+      <div class="feature-num">Feature ${String(i+1).padStart(2,'0')} / 14</div>
+      <div class="feature-name">${f.name}</div>
+      <div class="feature-desc">${f.desc}</div>
+      <span class="feature-tag" style="background:${f.tagColor}22;color:${f.tagColor};border:1px solid ${f.tagColor}44">${f.tag}</span>
+    </div>`;
+});
+
+// ── FILE UPLOAD ──────────────────────────────────────────────────────────────
+let parsedEvents = [];
+
+const uploadArea = document.getElementById('uploadArea');
+const fileInput  = document.getElementById('fileInput');
+const analyseBtn = document.getElementById('analyseBtn');
+
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    parsedEvents = parseCSV(text);
+    uploadArea.innerHTML = `
+      <span class="upload-icon">✅</span>
+      <div class="upload-title">${file.name}</div>
+      <div class="upload-sub">${parsedEvents.length} events loaded · click to replace</div>`;
+    analyseBtn.disabled = parsedEvents.length === 0;
+  };
+  reader.readAsText(file);
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = line.split(',');
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => r.event || r.label);
+}
+
+// ── DEMO DATA (used when no CSV loaded — for testing UI) ─────────────────────
+function generateDemoData() {
+  const classes = ['Foul','Yellow card','Foul','Foul','Yellow card','Foul','Foul','Yellow card','Foul','Foul'];
+  return classes.map((cls, i) => ({
+    time_sec:   String(Math.floor(Math.random() * 5000 + 200)),
+    event:      cls,
+    label:      cls,
+    confidence: (0.55 + Math.random() * 0.42).toFixed(3),
+    match_time: `${Math.floor(Math.random()*85)+1}'${String(Math.floor(Math.random()*59)).padStart(2,'0')}"`,
+    half:       i < 5 ? '1' : '2',
+  }));
+}
+
+// ── ANALYSIS ─────────────────────────────────────────────────────────────────
+function runAnalysis() {
+  const events = parsedEvents.length > 0 ? parsedEvents : generateDemoData();
+  const minConf = parseFloat(document.getElementById('confInput').value) || 0;
+  const classFilter = document.getElementById('classFilter').value;
+
+  let filtered = events.filter(e => {
+    const conf = parseFloat(e.confidence) || 0;
+    const cls  = e.event || e.label || '';
+    return conf >= minConf && (classFilter === 'all' || cls === classFilter);
+  });
+
+  // Show progress simulation
+  const progressPanel = document.getElementById('progressPanel');
+  const progressFill  = document.getElementById('progressFill');
+  const progressPct   = document.getElementById('progressPct');
+  const progressLog   = document.getElementById('progressLog');
+
+  progressPanel.classList.add('visible');
+  document.getElementById('resultsPanel').classList.remove('visible');
+
+  const logs = [
+    'Loading event index…',
+    `Found ${events.length} raw events`,
+    `Applying confidence threshold (≥${minConf})…`,
+    `${filtered.length} events pass filter`,
+    'Building timeline…',
+    'Rendering results…',
+    '✓ Analysis complete',
+  ];
+
+  let step = 0;
+  progressLog.innerHTML = '';
+
+  const interval = setInterval(() => {
+    step++;
+    const pct = Math.round((step / logs.length) * 100);
+    progressFill.style.width = pct + '%';
+    progressPct.textContent  = pct + '%';
+
+    const span = document.createElement('span');
+    span.className = 'log-line' + (step === logs.length ? ' highlight' : '');
+    span.textContent = '› ' + logs[step - 1];
+    progressLog.appendChild(span);
+    progressLog.scrollTop = progressLog.scrollHeight;
+
+    if (step >= logs.length) {
+      clearInterval(interval);
+      setTimeout(() => {
+        progressPanel.classList.remove('visible');
+        renderResults(filtered);
+      }, 400);
+    }
+  }, 220);
+}
+
+// ── RENDER RESULTS ───────────────────────────────────────────────────────────
+function renderResults(events) {
+  const panel = document.getElementById('resultsPanel');
+  panel.classList.add('visible');
+
+  // Summary
+  const counts = {};
+  events.forEach(e => {
+    const cls = e.event || e.label;
+    counts[cls] = (counts[cls] || 0) + 1;
+  });
+
+  const avgConf = events.length
+    ? (events.reduce((s, e) => s + (parseFloat(e.confidence) || 0), 0) / events.length).toFixed(2)
+    : '0.00';
+
+  const summaryData = [
+    { val: events.length,               key: 'Total Events',    cls: 'c-green' },
+    { val: counts['Foul']      || 0,    key: 'Fouls',           cls: 'c-blue'  },
+    { val: counts['Yellow card'] || 0,  key: 'Yellow Cards',    cls: 'c-amber' },
+    { val: avgConf,                      key: 'Avg Confidence',  cls: 'c-green' },
+  ];
+
+  document.getElementById('summaryCards').innerHTML = summaryData.map(s => `
+    <div class="summary-card">
+      <div class="summary-val ${s.cls}">${s.val}</div>
+      <div class="summary-key">${s.key}</div>
+    </div>`).join('');
+
+  // Timeline
+  renderTimeline(events);
+
+  // Table
+  renderTable(events);
+}
+
+function renderTimeline(events) {
+  const track = document.getElementById('timelineTrack');
+  const minutesEl = document.getElementById('timelineMinutes');
+  const legendEl  = document.getElementById('legendRow');
+
+  // Clear existing markers
+  track.querySelectorAll('.timeline-marker').forEach(m => m.remove());
+
+  const maxSec = Math.max(...events.map(e => parseFloat(e.time_sec) || 0), 5400);
+
+  events.forEach(e => {
+    const cls  = e.event || e.label;
+    const col  = getColor(cls);
+    const pct  = ((parseFloat(e.time_sec) || 0) / maxSec * 96 + 2);
+    const time = e.match_time || formatTime(parseFloat(e.time_sec));
+    const conf = parseFloat(e.confidence || 0).toFixed(2);
+
+    const marker = document.createElement('div');
+    marker.className = 'timeline-marker';
+    marker.style.left = pct + '%';
+    marker.innerHTML = `
+      <div class="marker-dot" style="background:${col.dot};box-shadow:0 0 8px ${col.dot}66"></div>
+      <div class="marker-label">${cls} · ${time} · ${conf}</div>`;
+    track.appendChild(marker);
+  });
+
+  // Minutes axis
+  const totalMin = Math.ceil(maxSec / 60);
+  const ticks = [0, Math.floor(totalMin*0.25), Math.floor(totalMin*0.5), Math.floor(totalMin*0.75), totalMin];
+  minutesEl.innerHTML = ticks.map(t => `<span>${t}'</span>`).join('');
+
+  // Legend
+  const seen = [...new Set(events.map(e => e.event || e.label))];
+  legendEl.innerHTML = seen.map(cls => {
+    const col = getColor(cls);
+    return `<div class="legend-item">
+      <div class="legend-dot" style="background:${col.dot}"></div>
+      ${cls}
+    </div>`;
+  }).join('');
+}
+
+function renderTable(events) {
+  const tbody = document.getElementById('eventsTableBody');
+  const sorted = [...events].sort((a, b) => (parseFloat(a.time_sec)||0) - (parseFloat(b.time_sec)||0));
+
+  tbody.innerHTML = sorted.map((e, i) => {
+    const cls  = e.event || e.label;
+    const col  = getColor(cls);
+    const conf = parseFloat(e.confidence || 0);
+    const time = e.match_time || formatTime(parseFloat(e.time_sec));
+
+    return `<tr>
+      <td style="color:var(--muted);font-family:var(--mono);font-size:0.72rem">${String(i+1).padStart(2,'0')}</td>
+      <td style="font-family:var(--mono);font-size:0.82rem">${time}</td>
+      <td>
+        <span class="event-badge" style="background:${col.bg};color:${col.text};border:1px solid ${col.border}44">
+          ${getEventEmoji(cls)} ${cls}
+        </span>
+      </td>
+      <td>
+        <div class="conf-bar-wrap">
+          <div class="conf-bar-track">
+            <div class="conf-bar-fill" style="width:${conf*100}%"></div>
+          </div>
+          <span class="conf-val">${conf.toFixed(2)}</span>
+        </div>
+      </td>
+      <td style="font-family:var(--mono);font-size:0.72rem;color:var(--muted)">Half ${e.half || '1'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function getEventEmoji(cls) {
+  const map = { 'Foul':'⚡', 'Yellow card':'🟨' };
+  return map[cls] || '📌';
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}'${String(s).padStart(2,'0')}"`;
+}
+
+// ── EXPORT ───────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const events = parsedEvents.length > 0 ? parsedEvents : [];
+  if (!events.length) return;
+  const keys = Object.keys(events[0]);
+  const csv = [keys.join(','), ...events.map(e => keys.map(k => e[k]).join(','))].join('\n');
+  download('kicksight_results.csv', csv, 'text/csv');
+}
+
+function exportJSON() {
+  const events = parsedEvents.length > 0 ? parsedEvents : [];
+  download('kicksight_results.json', JSON.stringify(events, null, 2), 'application/json');
+}
+
+function download(filename, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = filename;
+  a.click();
+}
+
+// ── SMOOTH SCROLL FIX FOR NAV ─────────────────────────────────────────────────
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// ── LOAD DEMO AUTOMATICALLY ───────────────────────────────────────────────────
+// Pre-populate with demo data so the page looks populated on load
+window.addEventListener('load', () => {
+  parsedEvents = generateDemoData();
+  analyseBtn.disabled = false;
+  runAnalysis();
+});
+</script>
+</body>
+</html>

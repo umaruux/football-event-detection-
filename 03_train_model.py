@@ -10,9 +10,6 @@
 
 Requirements:
     pip install scikit-learn imbalanced-learn pandas matplotlib seaborn joblib
-
-Usage:
-    python 03_train_model.py
 """
 
 import os
@@ -34,15 +31,19 @@ from sklearn.metrics import (
 )
 from imblearn.over_sampling import SMOTE
 
+from utils import FEATURE_COLS
+
 # ── CONFIG ─────────────────────────────────────────────────────────────────────
 FEATURES_CSV  = Path("data/features.csv")
 MODEL_OUT     = Path("models/rf_model.joblib")
 ENCODER_OUT   = Path("models/label_encoder.joblib")
 PLOTS_DIR     = Path("plots")
 
+TARGET_CLASSES = ["Penalty", "Free-kick", "Kick-off", "Corner", "Throw-in", "Background"]
+
 RANDOM_STATE  = 42
 TEST_SIZE     = 0.15
-VAL_SIZE      = 0.15   # of the remaining training data
+VAL_SIZE      = 0.15  
 
 # Random Forest hyperparameters
 RF_PARAMS = {
@@ -55,23 +56,6 @@ RF_PARAMS = {
 }
 # ───────────────────────────────────────────────────────────────────────────────
 
-FEATURE_COLS = [
-    "clustering_mid",
-    "ball_dist_spot_mid",
-    "wall_index_mid",
-    "players_in_box_mid",
-    "ball_in_box_mid",
-    "optical_flow",
-    "temporal_delta",
-    "ball_detected_ratio",
-    "avg_player_count",
-    "mean_wall_index",
-    "mean_ball_dist_spot",
-    "mean_clustering",
-    "mean_players_in_box",
-    "mean_ball_in_box",
-]
-
 PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_OUT.parent.mkdir(parents=True, exist_ok=True)
 
@@ -82,6 +66,7 @@ MODEL_OUT.parent.mkdir(parents=True, exist_ok=True)
 
 def load_data():
     df = pd.read_csv(FEATURES_CSV)
+    df = df[df["label"].isin(TARGET_CLASSES)].reset_index(drop=True)
     print(f"Loaded feature matrix: {df.shape}")
     print(df["label"].value_counts())
     return df
@@ -97,7 +82,8 @@ def run_eda(df):
     # 2a. Class distribution bar chart
     fig, ax = plt.subplots(figsize=(7, 4))
     counts = df["label"].value_counts()
-    bars = ax.bar(counts.index, counts.values, color=["#534AB7","#0F6E56","#993C1D","#993556"])
+    palette = ["#534AB7","#0F6E56","#993C1D","#BA7517","#A32D2D","#888888"]
+    bars = ax.bar(counts.index, counts.values, color=palette[:len(counts)])
     ax.bar_label(bars, padding=3, fontsize=10)
     ax.set_title("Event class distribution")
     ax.set_xlabel("Class")
@@ -122,7 +108,7 @@ def run_eda(df):
 
     # 2c. Box plots of key features by class
     key_features = ["ball_dist_spot_mid", "wall_index_mid",
-                    "optical_flow", "players_in_box_mid"]
+                    "ball_dist_corner_mid", "ball_dist_sideline_mid"]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     for ax, feat in zip(axes.flatten(), key_features):
         df.boxplot(column=feat, by="label", ax=ax, grid=False)
@@ -150,6 +136,16 @@ def run_eda(df):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def preprocess(df):
+        # ── Remove classes with too few samples for SMOTE (needs >= k+1 = 6) ─
+    MIN_SAMPLES = 6
+    class_counts = df["label"].value_counts()
+    valid_classes = class_counts[class_counts >= MIN_SAMPLES].index
+    removed = class_counts[class_counts < MIN_SAMPLES]
+    if not removed.empty:
+        print(f"\nWarning: Removing classes with too few samples: {removed.to_dict()}")
+    df = df[df["label"].isin(valid_classes)].reset_index(drop=True)
+    # ───────────────────────────────────────────────────────────────────
+    
     # Encode labels
     le = LabelEncoder()
     y = le.fit_transform(df["label"])

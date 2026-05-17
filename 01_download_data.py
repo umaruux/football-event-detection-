@@ -1,153 +1,167 @@
 """
 01_download_data.py
 --------------------
-Downloads SoccerNet annotation labels and video clips for the target event
-classes: Penalty, Foul, Yellow card, Red card.
+Downloads SoccerNet annotation labels for the test split, and lets you
+download 224p videos for individual games one at a time.
 
-Requirements:
-    pip install SoccerNet
+Step A (fast, ~5 min): all Labels-v2.json for the test split.
+Step B (slow, ~25 min per half): videos, downloaded ONE GAME AT A TIME so
+failures only affect that one game.
 
 Usage:
-    python 01_download_data.py
+    # Step A — get all labels for the test split
+    python 01_download_data.py --labels-only
 
-Outputs:
-    data/soccernet/          <- annotation JSON files per match
+    # Show the planned 15-game list (1-indexed)
+    python 01_download_data.py --list
+
+    # Download one game (by 1-indexed slot in the planned list)
+    python 01_download_data.py --game 1
+    python 01_download_data.py --game 2
+    ...
+
+    # Show which games already have both halves downloaded
+    python 01_download_data.py --status
+
+    # (Optional) download every game in the planned list in one go
+    python 01_download_data.py --all
 """
 
-import os
-import json
+import argparse
 from pathlib import Path
 
-# ── CONFIG ─────────────────────────────────────────────────────────────────────
-DATA_DIR = Path("C:/Users/Bisma/AppData/Roaming/Python/Python314/site-packages/SoccerNet")
-TARGET_CLASSES = {"Penalty", "Foul", "Yellow card", "Red card"}
-SPLITS = ["train", "valid", "test"]
-
-# SoccerNet requires a password — register at https://www.soccer-net.org/data
-# to get one and paste it below.
-SOCCERNET_PASSWORD = "s0cc3rn3t"
-# ───────────────────────────────────────────────────────────────────────────────
+from SoccerNet.Downloader import SoccerNetDownloader
 
 
-def download_annotations():
-    """Download Labels-v2.json annotation files for all splits."""
-    from SoccerNet.Downloader import SoccerNetDownloader
+LOCAL_DIR = Path("data/soccernet")
+PASSWORD  = "s0cc3rn3t"
+SPLIT     = "test"
+NUM_GAMES = 15
+VIDEO_FILES = ["1_224p.mkv", "2_224p.mkv"]
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    downloader = SoccerNetDownloader(LocalDirectory=str(DATA_DIR))
-    downloader.password = SOCCERNET_PASSWORD
+def make_downloader():
+    LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+    d = SoccerNetDownloader(LocalDirectory=str(LOCAL_DIR))
+    d.password = PASSWORD
+    return d
 
-    print("Downloading annotation labels...")
-    downloader.downloadGames(
-        files=["Labels-v2.json"],
-        split=SPLITS,
-        overwrite=False
+
+def all_games_with_labels():
+    """Return a sorted list of game paths (relative to LOCAL_DIR) that have Labels-v2.json.
+    Forward slashes only — SoccerNet's URL construction needs them on Windows too."""
+    return sorted(
+        p.parent.relative_to(LOCAL_DIR).as_posix()
+        for p in LOCAL_DIR.rglob("Labels-v2.json")
     )
-    print(f"Annotations saved to: {DATA_DIR}")
 
 
-def download_videos():
-    """
-    Download 720p MKV video clips.
-    WARNING: Full dataset is large (~1TB). Download only what you need.
-    """
-    from SoccerNet.Downloader import SoccerNetDownloader
-
-    downloader = SoccerNetDownloader(LocalDirectory=str(DATA_DIR))
-    downloader.password = SOCCERNET_PASSWORD
-
-    print("Downloading 720p videos (this may take a while)...")
-    downloader.downloadGames(
-        files=["1_720p.mkv", "2_720p.mkv"],  # first and second halves
-        split=SPLITS,
-        overwrite=False
-    )
-    print("Videos downloaded.")
+def planned_games():
+    """The fixed list of games to use for training (first NUM_GAMES alphabetically)."""
+    games = all_games_with_labels()
+    if not games:
+        raise SystemExit(
+            "No labels found. Run `python 01_download_data.py --labels-only` first."
+        )
+    return games[:NUM_GAMES]
 
 
-def filter_and_summarise():
-    """
-    Walk all downloaded annotation files, filter for target classes,
-    and print a summary of event counts per class.
-    """
-    counts = {cls: 0 for cls in TARGET_CLASSES}
-    total_games = 0
-
-    for label_file in DATA_DIR.rglob("Labels-v2.json"):
-        total_games += 1
-        with open(label_file, "r") as f:
-            data = json.load(f)
-
-        for annotation in data.get("annotations", []):
-            label = annotation.get("label", "")
-            if label in TARGET_CLASSES:
-                counts[label] += 1
-
-    print("\n── Dataset Summary ──────────────────")
-    print(f"  Total games found : {total_games}")
-    for cls, count in sorted(counts.items(), key=lambda x: -x[1]):
-        print(f"  {cls:<15}: {count} events")
-    print("─────────────────────────────────────")
-    return counts
+def game_status(game):
+    """Return dict of which files exist locally for this game."""
+    game_dir = LOCAL_DIR / game
+    return {fname: (game_dir / fname).exists() for fname in VIDEO_FILES}
 
 
-def build_event_index():
-    """
-    Build a flat CSV index of all target events with their:
-    - game path
-    - half (1 or 2)
-    - position (seconds)
-    - label
-    - video path
+def cmd_labels_only():
+    d = make_downloader()
+    print(f"Downloading Labels-v2.json for split={SPLIT}...")
+    d.downloadGames(files=["Labels-v2.json"], split=[SPLIT])
+    print(f"Labels downloaded into {LOCAL_DIR}.")
 
-    Saves to data/event_index.csv
-    """
-    import csv
 
-    rows = []
-    for label_file in DATA_DIR.rglob("Labels-v2.json"):
-        game_dir = label_file.parent
-        with open(label_file, "r") as f:
-            data = json.load(f)
+def cmd_list():
+    games = planned_games()
+    print(f"Planned training corpus ({len(games)} games):\n")
+    for i, g in enumerate(games, 1):
+        st = game_status(g)
+        marks = "".join("✓" if st[f] else "·" for f in VIDEO_FILES)
+        print(f"  [{i:>2}] {marks}  {g}")
+    print("\nLegend: [✓ ·] = [half1 half2]   ✓=downloaded  ·=missing")
+    print("\nRun `python 01_download_data.py --game N` to download game N (1-indexed).")
 
-        for ann in data.get("annotations", []):
-            label = ann.get("label", "")
-            if label not in TARGET_CLASSES:
-                continue
 
-            half = int(ann.get("gameTime", "1 - 00:00").split(" - ")[0])
-            time_str = ann.get("gameTime", "1 - 00:00").split(" - ")[1]
-            mm, ss = time_str.split(":")
-            position_sec = int(mm) * 60 + int(ss)
+def cmd_status():
+    games = planned_games()
+    done = 0
+    for i, g in enumerate(games, 1):
+        st = game_status(g)
+        if all(st.values()):
+            done += 1
+        marks = "".join("✓" if st[f] else "·" for f in VIDEO_FILES)
+        print(f"  [{i:>2}] {marks}  {g}")
+    print(f"\n{done}/{len(games)} games fully downloaded.")
 
-            video_name = f"{half}_720p.mkv"
-            video_path = game_dir / video_name
 
-            rows.append({
-                "game_dir": str(game_dir),
-                "half": half,
-                "position_sec": position_sec,
-                "label": label,
-                "video_path": str(video_path),
-                "video_exists": video_path.exists(),
-            })
+def download_one(game):
+    d = make_downloader()
+    print(f"\nDownloading: {game}")
+    try:
+        d.downloadGame(game=game, files=VIDEO_FILES, spl=SPLIT)
+        print(f"  Done: {game}")
+        return True
+    except Exception as e:
+        print(f"  FAILED: {e}")
+        return False
 
-    out_path = Path("data/event_index.csv")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
 
-    print(f"\nEvent index saved to: {out_path}  ({len(rows)} events)")
-    return out_path
+def cmd_game(n):
+    games = planned_games()
+    if not (1 <= n <= len(games)):
+        raise SystemExit(f"--game must be between 1 and {len(games)}")
+    download_one(games[n - 1])
+
+
+def cmd_all():
+    games = planned_games()
+    print(f"Downloading {len(games)} games sequentially...")
+    failed = []
+    for i, g in enumerate(games, 1):
+        print(f"\n[{i}/{len(games)}]")
+        if not download_one(g):
+            failed.append(g)
+    if failed:
+        print(f"\n{len(failed)} games failed:")
+        for g in failed:
+            print(f"  {g}")
+        print("\nRetry individually with --game N (see --list for indices).")
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--labels-only", action="store_true",
+                       help="Download Labels-v2.json for the whole test split.")
+    group.add_argument("--list", action="store_true",
+                       help="Show the planned 15-game list with download status.")
+    group.add_argument("--status", action="store_true",
+                       help="Show download status of the planned 15 games.")
+    group.add_argument("--game", type=int, metavar="N",
+                       help="Download one game by 1-indexed slot in the planned list.")
+    group.add_argument("--all", action="store_true",
+                       help="Download every planned game sequentially (long).")
+    args = parser.parse_args()
+
+    if args.labels_only:
+        cmd_labels_only()
+    elif args.list:
+        cmd_list()
+    elif args.status:
+        cmd_status()
+    elif args.game is not None:
+        cmd_game(args.game)
+    elif args.all:
+        cmd_all()
 
 
 if __name__ == "__main__":
-    download_annotations()
-    # Uncomment below to also download videos (large download):
-    # download_videos()
-
-    filter_and_summarise()
-    build_event_index()
+    main()

@@ -1,20 +1,22 @@
-# Data and videos
+# Virtual env
+.venv/
+
+# Data + derived artifacts
 data/
-*.mkv
-*.mp4
-
-# Trained models
-models/
-
-# Plots
 plots/
+results_*.csv
 
-# Python cache
+# Trained model artifacts (regenerate via 03_train_model.py)
+models/*.joblib
+
+# Auto-downloaded YOLO weights (ultralytics fetches on first run)
+yolov8n.pt
+
+# Python
 __pycache__/
-*.pyc
-*.pyo
-.env
 
-# IDE files
-.vscode/
+# OS / IDE
+.DS_Store
+Thumbs.db
 .idea/
+.vscode/

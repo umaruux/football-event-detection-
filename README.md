@@ -1,7 +1,7 @@
 # Automated Detection of Dead-Ball Events in Football Broadcasts
 ## Introduction to Data Science — Group Project
 
-**Group Members:** Ahmed Umar Mirza (01-134232-028), Bisma Rauf (01-134232-047)
+**Group Members:** Ahmed Umar Mirza (01-134232-028), Bisma Rauf (01-134232-047)  
 **Dataset:** SoccerNet (https://www.soccer-net.org/data)
 
 ---
